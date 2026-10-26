@@ -17,7 +17,7 @@ FROM node:22-alpine AS runner
 WORKDIR /usr/src/app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1 \
-    PORT=3099 \
+    PORT=3000 \
     HOSTNAME=0.0.0.0
 
 # Saved settings, history, and the probe cache live in .status.
