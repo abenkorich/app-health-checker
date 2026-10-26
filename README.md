@@ -27,6 +27,20 @@ npm run dev
 
 Open http://127.0.0.1:3099. Copy `.env.example` when the apps are not on the local ports.
 
+## Docker
+
+```bash
+docker build -t app-health-checker .
+docker run --rm -p 3099:3099 \
+  -e STATUS_SECRET \
+  -e PLATFORM_HEALTH_URL=http://platform:3000/health \
+  -e PLATFORM_READY_URL=http://platform:3000/health/ready \
+  -v app-health-checker:/usr/src/app/.status \
+  app-health-checker
+```
+
+Pass the same URL and SMTP variables as `.env.example`. `127.0.0.1` inside the container is the container, so use the other services' hostnames. The `.status` volume keeps saved settings and the 24-hour history. The sign-in cookie is Secure when `NODE_ENV` is production, so serve the board over HTTPS.
+
 The board asks for `STATUS_SECRET` before it shows anything. That value lives in `.env` or `.env.local`. A matching key sets an httpOnly cookie for 8 hours. `GET /api/status` and the settings API use the same cookie. Without `STATUS_SECRET`, the page stays closed.
 
 ## Platform worker

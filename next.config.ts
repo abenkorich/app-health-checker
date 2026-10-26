@@ -1,6 +1,7 @@
 import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
+    output: 'standalone',
     // Next rewrites this file on every dev start unless the flag is off.
     agentRules: false,
     // The board is opened on 127.0.0.1 as well as localhost during local checks.
