@@ -38,7 +38,7 @@ COPY --from=builder --chown=nextjs:nodejs /usr/src/app/.next/static ./.next/stat
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
-EXPOSE 3099
+EXPOSE 3000
 VOLUME ["/usr/src/app/.status"]
 ENTRYPOINT ["docker-entrypoint.sh"]
 CMD ["node", "server.js"]
