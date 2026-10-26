@@ -9,6 +9,7 @@ export type AlertEmail = {
     kind: 'down' | 'recovered';
     subject: string;
     text: string;
+    html: string;
 };
 
 export type MailConfig = {
@@ -93,33 +94,47 @@ export function planAlerts(input: {
     }
 
     const emails: AlertEmail[] = [];
-    if (opened.length > 0) emails.push(downEmail(opened, input.report.checkedAt, false));
-    if (reminded.length > 0) emails.push(downEmail(reminded, input.report.checkedAt, true));
-    if (recovered.length > 0) emails.push(recoveredEmail(recovered, input.report.checkedAt));
+    if (opened.length > 0) emails.push(statusEmail(opened, input.report, false));
+    if (reminded.length > 0) emails.push(statusEmail(reminded, input.report, true));
+    if (recovered.length > 0) emails.push(statusEmail(recovered, input.report, false, 'recovered'));
     return { next, emails };
 }
 
-function downEmail(services: ServiceReport[], checkedAt: string, reminder: boolean): AlertEmail {
-    const subject = services.length === 1
-        ? `App Health Checker: ${services[0].name} is ${reminder ? 'still ' : ''}${services[0].state}`
-        : `App Health Checker: ${services.length} services are ${reminder ? 'still ' : ''}${worst(services)}`;
-    const lines = services.map(describeService);
-    lines.push('', `Checked ${checkedAt}`);
-    return { kind: 'down', subject, text: lines.join('\n') };
+function statusEmail(
+    focus: ServiceReport[],
+    report: StatusReport,
+    reminder: boolean,
+    kind: AlertEmail['kind'] = 'down',
+): AlertEmail {
+    const subject = `App Health Checker: ${statusPhrase(focus, reminder)} · overall ${report.state}`;
+    const lines = [
+        `Overall: ${report.state}`,
+        '',
+        ...focus.map(service => (
+            kind === 'recovered' ? `${service.name} is ${service.state}.` : describeService(service)
+        )),
+        '',
+        `Checked ${report.checkedAt}`,
+    ];
+    return {
+        kind,
+        subject,
+        text: lines.join('\n'),
+        html: renderEmail(focus, report, reminder, kind),
+    };
 }
 
-function recoveredEmail(services: ServiceReport[], checkedAt: string): AlertEmail {
-    const allUp = services.every(service => service.state === 'up');
-    const subject = services.length === 1
-        ? `App Health Checker: ${services[0].name} ${allUp ? 'is responding' : `is ${services[0].state}`}`
-        : `App Health Checker: ${services.length} services ${allUp ? 'are responding' : 'left the alert state'}`;
-    const lines = services.map(service => (
-        service.state === 'up'
-            ? `${service.name} is responding again.`
-            : `${service.name} is ${service.state}.`
-    ));
-    lines.push('', `Checked ${checkedAt}`);
-    return { kind: 'recovered', subject, text: lines.join('\n') };
+function statusPhrase(services: ServiceReport[], reminder: boolean): string {
+    const still = reminder ? 'still ' : '';
+    if (services.length === 1) return `${oneLine(services[0].name)} ${still}${services[0].state}`;
+    const parts: string[] = [];
+    const down = services.filter(service => service.state === 'down').length;
+    const degraded = services.filter(service => service.state === 'degraded').length;
+    const up = services.filter(service => service.state === 'up').length;
+    if (down > 0) parts.push(`${down} ${still}down`);
+    if (degraded > 0) parts.push(`${degraded} ${still}degraded`);
+    if (up > 0) parts.push(`${up} up`);
+    return parts.join(', ') || `${services.length} ${still}${worst(services)}`;
 }
 
 function describeService(service: ServiceReport): string {
@@ -130,6 +145,79 @@ function describeService(service: ServiceReport): string {
         lines.push(`${dependency.name}: ${dependency.state}${dependency.detail ? ` (${dependency.detail})` : ''}`);
     }
     return lines.join('\n');
+}
+
+const STATE_COLOR: Record<State, { bar: string; ink: string; wash: string }> = {
+    up: { bar: '#1f8a4c', ink: '#166534', wash: '#ecfdf3' },
+    degraded: { bar: '#d97706', ink: '#92400e', wash: '#fff7ed' },
+    down: { bar: '#2563eb', ink: '#1d4ed8', wash: '#eff6ff' },
+};
+
+function renderEmail(focus: ServiceReport[], report: StatusReport, reminder: boolean, kind: AlertEmail['kind']): string {
+    const headline = kind === 'recovered' ? 'Recovered' : reminder ? 'Still down' : 'Needs attention';
+    const widgets = report.services.map(widget).join('');
+    const names = focus.map(service => esc(service.name)).join(', ');
+    return `<!DOCTYPE html>
+<html>
+<body style="margin:0;padding:0;background:#f4f6f8;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;padding:24px 12px;">
+<tr><td align="center">
+<table role="presentation" width="560" cellpadding="0" cellspacing="0" style="width:100%;max-width:560px;font-family:Segoe UI,Helvetica,Arial,sans-serif;color:#122027;">
+<tr><td style="padding:0 4px 16px;">
+<div style="font-size:12px;font-weight:600;letter-spacing:0.08em;color:#5c6b73;">APP HEALTH CHECKER</div>
+<div style="margin-top:6px;font-size:22px;font-weight:650;letter-spacing:-0.02em;">Overall ${esc(report.state)}</div>
+<div style="margin-top:4px;font-size:14px;color:#5c6b73;">${esc(headline)} · ${names}</div>
+</td></tr>
+${widgets}
+<tr><td style="padding:8px 4px 0;font-size:12px;color:#5c6b73;">Checked ${esc(report.checkedAt)}</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>`;
+}
+
+function widget(service: ServiceReport): string {
+    const color = STATE_COLOR[service.state];
+    const meta = [service.latencyMs == null ? '' : `${service.latencyMs} ms`, service.version ?? '']
+        .filter(Boolean)
+        .map(esc)
+        .join(' · ');
+    const failing = service.dependencies.filter(item => item.state !== 'up' && item.state !== 'skipped');
+    const deps = failing.map(item => (
+        `<div style="margin-top:4px;font-size:13px;color:#5c6b73;">${esc(item.name)}: ${esc(item.state)}${item.detail ? ` (${esc(item.detail)})` : ''}</div>`
+    )).join('');
+    return `<tr><td style="padding:0 0 10px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" data-widget="${esc(service.id)}" style="background:#ffffff;border:1px solid #e4e8eb;border-left:3px solid ${color.bar};border-radius:10px;">
+<tr><td style="padding:14px 16px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+<td style="font-size:15px;font-weight:650;">${esc(service.name)}</td>
+<td align="right"><span style="display:inline-block;padding:2px 8px;border-radius:7px;background:${color.wash};color:${color.ink};font-size:12px;font-weight:650;">${esc(label(service.state))}</span></td>
+</tr></table>
+${meta ? `<div style="margin-top:8px;font-size:13px;color:#5c6b73;">${meta}</div>` : ''}
+${service.detail ? `<div style="margin-top:6px;font-size:13px;color:#122027;">${esc(service.detail)}</div>` : ''}
+${deps}
+</td></tr>
+</table>
+</td></tr>`;
+}
+
+function label(state: State): string {
+    if (state === 'up') return 'Up';
+    if (state === 'degraded') return 'Degraded';
+    return 'Down';
+}
+
+function esc(value: string): string {
+    return value
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+}
+
+function oneLine(value: string): string {
+    return value.replace(/[\r\n]+/g, ' ').trim();
 }
 
 function worst(services: ServiceReport[]): State {

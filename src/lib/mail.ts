@@ -13,5 +13,6 @@ export async function sendAlertEmail(message: AlertEmail, config: MailConfig): P
         to: config.to.join(', '),
         subject: message.subject,
         text: message.text,
+        html: message.html,
     });
 }

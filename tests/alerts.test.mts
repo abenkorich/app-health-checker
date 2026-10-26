@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { alertRemindMs, planAlerts, readMailConfig } from '../src/lib/alerts.ts';
-import type { ServiceReport, StatusReport } from '../src/lib/aggregate.ts';
+import { overallState, type ServiceReport, type StatusReport } from '../src/lib/aggregate.ts';
 
 const checkedAt = '2026-10-24T16:46:00.000Z';
 
@@ -10,7 +10,7 @@ function service(id: string, state: ServiceReport['state'], detail: string | nul
 }
 
 function report(services: ServiceReport[]): StatusReport {
-    return { state: 'down', checkedAt, pollMs: 30_000, services };
+    return { state: overallState(services.map(service => service.state)), checkedAt, pollMs: 30_000, services };
 }
 
 describe('planAlerts', () => {
@@ -22,8 +22,10 @@ describe('planAlerts', () => {
             remindMs: 60_000,
         });
         assert.equal(first.emails.length, 1);
-        assert.equal(first.emails[0]?.subject, 'App Health Checker: Storefront is down');
+        assert.equal(first.emails[0]?.subject, 'App Health Checker: Storefront down · overall down');
         assert.equal(first.emails[0]?.text.includes('No response'), true);
+        assert.equal(first.emails[0]?.html.includes('data-widget="Storefront"'), true);
+        assert.equal(first.emails[0]?.html.includes('Overall down'), true);
 
         const second = planAlerts({
             previous: first.next,
@@ -47,7 +49,7 @@ describe('planAlerts', () => {
             now: 60_000,
             remindMs: 60_000,
         });
-        assert.equal(reminded.emails[0]?.subject, 'App Health Checker: POS is still down');
+        assert.equal(reminded.emails[0]?.subject, 'App Health Checker: POS still down · overall down');
 
         const recovered = planAlerts({
             previous: reminded.next,
@@ -57,7 +59,7 @@ describe('planAlerts', () => {
         });
         assert.equal(recovered.emails.length, 1);
         assert.equal(recovered.emails[0]?.kind, 'recovered');
-        assert.equal(recovered.emails[0]?.subject, 'App Health Checker: POS is responding');
+        assert.equal(recovered.emails[0]?.subject, 'App Health Checker: POS up · overall up');
     });
 
     it('emails when the platform is degraded because a dependency is down', () => {
@@ -76,7 +78,8 @@ describe('planAlerts', () => {
             now: 0,
             remindMs: 60_000,
         });
-        assert.equal(planned.emails[0]?.subject, 'App Health Checker: Platform API is degraded');
+        assert.equal(planned.emails[0]?.subject, 'App Health Checker: Platform API degraded · overall degraded');
+        assert.equal(planned.emails[0]?.html.includes('data-widget="platform"'), true);
         assert.equal(planned.emails[0]?.text.includes('Database: down (unreachable)'), true);
         assert.equal(planned.emails[0]?.text.includes('Redis'), false);
         assert.equal(planned.emails[0]?.text.includes('Worker'), false);
@@ -99,7 +102,7 @@ describe('planAlerts', () => {
         });
         assert.equal(quieter.emails.length, 1);
         assert.equal(quieter.emails[0]?.kind, 'recovered');
-        assert.equal(quieter.emails[0]?.subject, 'App Health Checker: Platform API is degraded');
+        assert.equal(quieter.emails[0]?.subject, 'App Health Checker: Platform API degraded · overall degraded');
         assert.equal(quieter.emails[0]?.text.includes('responding'), false);
 
         const held = planAlerts({
