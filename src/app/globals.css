@@ -308,7 +308,7 @@ dd { margin: 0; font-variant-numeric: tabular-nums; font-family: ui-monospace, "
 
 .widgets {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
+    grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 0.75rem;
     margin: 0 0 1rem;
 }
