@@ -308,7 +308,7 @@ dd { margin: 0; font-variant-numeric: tabular-nums; font-family: ui-monospace, "
 
 .widgets {
     display: grid;
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.75rem;
     margin: 0 0 1rem;
 }
@@ -357,7 +357,7 @@ dd { margin: 0; font-variant-numeric: tabular-nums; font-family: ui-monospace, "
 
 .app-row {
     display: grid;
-    grid-template-columns: 1fr 2fr;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
     gap: 0.75rem;
 }
 
@@ -370,6 +370,7 @@ dd { margin: 0; font-variant-numeric: tabular-nums; font-family: ui-monospace, "
 
 .graph {
     display: grid;
+    grid-column: span 2;
     align-content: start;
     gap: 0.65rem;
     padding: 1rem 1.05rem 0.9rem;
@@ -517,16 +518,13 @@ dd { margin: 0; font-variant-numeric: tabular-nums; font-family: ui-monospace, "
     background: var(--bg-raise);
 }
 
-@media (max-width: 900px) {
-    .widgets { grid-template-columns: 1fr 1fr; }
-}
-
 @media (max-width: 720px) {
     .mast { align-items: flex-start; flex-direction: column; }
     .services { grid-template-columns: 1fr; }
     .card.wide { grid-column: auto; }
     .settings-grid { grid-template-columns: 1fr; }
     .widgets, .app-row { grid-template-columns: 1fr; }
+    .graph { grid-column: auto; }
 }
 
 @media (prefers-reduced-motion: reduce) {

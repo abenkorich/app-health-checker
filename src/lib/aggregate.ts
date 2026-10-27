@@ -139,6 +139,50 @@ export function serviceFromPlatform(input: {
     };
 }
 
+/** A direct Redis PING. Replaces a Redis row that came from the ready payload. */
+export function applyRedis(report: ServiceReport, probe: { ok: boolean; latencyMs: number; detail: string | null } | null): ServiceReport {
+    if (!probe) return report;
+    const failed = !probe.ok;
+    const dependency: DependencyReport = {
+        id: 'redis',
+        name: 'Redis',
+        state: failed ? 'down' : 'up',
+        latencyMs: probe.latencyMs > 0 ? probe.latencyMs : null,
+        detail: failed ? (probe.detail ?? 'unreachable') : null,
+    };
+    const dependencies = [...report.dependencies.filter(item => item.id !== 'redis'), dependency];
+    const othersDown = dependencies.some(item => item.id !== 'redis' && item.state === 'down');
+    const readyFailed = report.detail === 'Readiness check failed';
+    return {
+        ...report,
+        state: report.state === 'down' ? 'down' : failed || othersDown || readyFailed ? 'degraded' : 'up',
+        detail: report.state === 'up' && failed ? 'Redis check failed' : report.detail,
+        dependencies,
+    };
+}
+
+/** A direct GET of an API worker. Replaces a worker row that came from the ready payload. */
+export function applyWorker(report: ServiceReport, probe: ProbeSnapshot | null): ServiceReport {
+    if (!probe) return report;
+    const failed = !probe.ok;
+    const dependency: DependencyReport = {
+        id: 'worker',
+        name: 'Worker',
+        state: failed ? 'down' : 'up',
+        latencyMs: failed && probe.status == null ? null : probe.latencyMs,
+        detail: failed ? (probe.status == null ? 'No response' : `HTTP ${probe.status}`) : null,
+    };
+    const dependencies = [...report.dependencies.filter(item => item.id !== 'worker'), dependency];
+    const othersDown = dependencies.some(item => item.id !== 'worker' && item.state === 'down');
+    const readyFailed = report.detail === 'Readiness check failed';
+    return {
+        ...report,
+        state: report.state === 'down' ? 'down' : failed || othersDown || readyFailed ? 'degraded' : 'up',
+        detail: report.state === 'up' && failed ? 'Worker check failed' : report.detail,
+        dependencies,
+    };
+}
+
 /** A homepage GET is a curl-style check: 2xx passes, and the HTML body is ignored. */
 export function applyHomepage(report: ServiceReport, probe: ProbeSnapshot | null): ServiceReport {
     if (!probe) return report;

@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { StatusReport } from './aggregate';
-import { planAlerts, type AlertMemory } from './alerts';
+import { planAlerts, statusSnapshot, type AlertMemory } from './alerts';
 import { collectStatus } from './collect';
 import { appendHistory, type History } from './history';
 import { sendAlertEmail } from './mail';
@@ -58,6 +58,31 @@ function arm(delayMs: number): void {
 
 export function currentReport(refresh: boolean): Promise<StatusReport> {
     return withLock(() => checkOnce(refresh));
+}
+
+/** Probe now and mail the board. Does not move the reminder clock. */
+export async function sendStatusEmail(): Promise<{ ok: true; subject: string } | { ok: false; error: string }> {
+    const settings = loadConfig();
+    const mail = mailFromSettings(settings);
+    if (!mail) return { ok: false, error: 'Email needs a recipient, an SMTP host, and a from address. Save them first.' };
+    try {
+        const subject = await withLock(async () => {
+            const report: StatusReport = { ...(await collectStatus(settings)), alerts: 'on' };
+            const history = appendHistory(readHistory(), report.services, report.checkedAt);
+            writeHistory(history);
+            const stored = readStore();
+            writeStore({ at: Date.now(), body: report, previous: stored?.previous ?? null });
+            const email = statusSnapshot(report);
+            await sendAlertEmail(email, mail);
+            console.log(`Status email sent: ${email.subject}`);
+            return email.subject;
+        });
+        return { ok: true, subject };
+    } catch (err) {
+        const reason = err instanceof Error ? err.message : 'The status email could not be sent.';
+        console.error(`Status email failed: ${reason}`);
+        return { ok: false, error: 'The status email could not be sent.' };
+    }
 }
 
 async function checkOnce(refresh: boolean): Promise<StatusReport> {

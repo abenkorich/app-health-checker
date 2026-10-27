@@ -6,7 +6,7 @@ The first run watches the ecommerce apps below. After you save Settings, that li
 
 | Seeded app | Check |
 | --- | --- |
-| Platform API | `GET /health` on port 3000, then `GET /health/ready` for Postgres, Redis, and the worker |
+| Platform API | `GET /health` on port 3000, `GET /health/ready`, the worker at port 3020, and Redis at `redis://127.0.0.1:6379` |
 | Storefront | `GET /api/health` and a homepage curl of `/` on port 3001 |
 | POS | `GET /api/health` and a homepage curl of `/` on port 3002 |
 | Console | `GET /api/health` and a homepage curl of `/` on port 3003 |

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { alertRemindMs, planAlerts, readMailConfig } from '../src/lib/alerts.ts';
+import { alertRemindMs, planAlerts, readMailConfig, statusSnapshot } from '../src/lib/alerts.ts';
 import { overallState, type ServiceReport, type StatusReport } from '../src/lib/aggregate.ts';
 
 const checkedAt = '2026-10-24T16:46:00.000Z';
@@ -123,6 +123,18 @@ describe('planAlerts', () => {
             remindMs: 60_000,
         });
         assert.equal(planned.emails[0]?.text.includes('password'), false);
+    });
+
+    it('builds a status email for every app and names the down count and overall state', () => {
+        const email = statusSnapshot(report([
+            service('Storefront', 'down', 'No response'),
+            service('POS', 'up'),
+        ]));
+        assert.equal(email.kind, 'status');
+        assert.equal(email.subject, 'App Health Checker: 1 down · overall down');
+        assert.equal(email.html.includes('data-widget="Storefront"'), true);
+        assert.equal(email.html.includes('data-widget="POS"'), true);
+        assert.equal(email.text.includes('Overall: down'), true);
     });
 });
 

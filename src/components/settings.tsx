@@ -10,6 +10,8 @@ export function SettingsPanel({ onClose, onSaved }: { onClose: () => void; onSav
     const [error, setError] = useState<string | null>(null);
     const [saved, setSaved] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [sending, setSending] = useState(false);
+    const [sentSubject, setSentSubject] = useState<string | null>(null);
 
     useEffect(() => {
         const timer = window.setTimeout(() => {
@@ -40,6 +42,7 @@ export function SettingsPanel({ onClose, onSaved }: { onClose: () => void; onSav
         if (!draft) return;
         setSaving(true);
         setSaved(false);
+        setSentSubject(null);
         setError(null);
         try {
             const response = await fetch('/api/settings', {
@@ -60,6 +63,26 @@ export function SettingsPanel({ onClose, onSaved }: { onClose: () => void; onSav
             setError(err instanceof Error ? err.message : 'Save failed.');
         } finally {
             setSaving(false);
+        }
+    }
+
+    async function sendStatus() {
+        setSending(true);
+        setSentSubject(null);
+        setError(null);
+        try {
+            const response = await fetch('/api/email', { method: 'POST' });
+            if (response.status === 401) {
+                window.location.assign('/');
+                return;
+            }
+            const body = (await response.json()) as { subject?: string; error?: string };
+            if (!response.ok) throw new Error(body.error || 'The status email could not be sent.');
+            setSentSubject(body.subject ?? 'Status email sent.');
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'The status email could not be sent.');
+        } finally {
+            setSending(false);
         }
     }
 
@@ -184,6 +207,13 @@ export function SettingsPanel({ onClose, onSaved }: { onClose: () => void; onSav
                                     />
                                 </label>
                             </div>
+                            <div className="settings-actions">
+                                <button type="button" onClick={() => void sendStatus()} disabled={sending}>
+                                    {sending ? 'Sending…' : 'Send status'}
+                                </button>
+                                {sentSubject ? <p className="ok">Sent. {sentSubject}</p> : null}
+                            </div>
+                            <p className="drawer-note">Sends a live check to the saved recipients. Save email settings before sending.</p>
                         </fieldset>
 
                         <fieldset>
@@ -211,6 +241,19 @@ export function SettingsPanel({ onClose, onSaved }: { onClose: () => void; onSav
                                             />
                                         </label>
                                         <label>
+                                            Type
+                                            <select
+                                                value={service.type}
+                                                onChange={event => {
+                                                    const type = event.target.value === 'api' ? 'api' : 'web-app';
+                                                    updateService(service.id, { type, kind: type === 'api' ? 'platform' : 'http' });
+                                                }}
+                                            >
+                                                <option value="api">API</option>
+                                                <option value="web-app">Web app</option>
+                                            </select>
+                                        </label>
+                                        <label>
                                             Health URL
                                             <input
                                                 type="url"
@@ -219,24 +262,48 @@ export function SettingsPanel({ onClose, onSaved }: { onClose: () => void; onSav
                                                 onChange={event => updateService(service.id, { healthUrl: event.target.value })}
                                             />
                                         </label>
-                                        <label>
-                                            Ready URL
-                                            <input
-                                                type="url"
-                                                value={service.readyUrl}
-                                                placeholder="Optional second check"
-                                                onChange={event => updateService(service.id, { readyUrl: event.target.value })}
-                                            />
-                                        </label>
-                                        <label>
-                                            Homepage URL
-                                            <input
-                                                type="url"
-                                                value={service.homeUrl}
-                                                placeholder="Optional curl of the public page"
-                                                onChange={event => updateService(service.id, { homeUrl: event.target.value })}
-                                            />
-                                        </label>
+                                        {service.type === 'api' ? (
+                                            <>
+                                                <label>
+                                                    Ready URL
+                                                    <input
+                                                        type="url"
+                                                        value={service.readyUrl}
+                                                        placeholder="Optional readiness check"
+                                                        onChange={event => updateService(service.id, { readyUrl: event.target.value })}
+                                                    />
+                                                </label>
+                                                <label>
+                                                    Worker URL
+                                                    <input
+                                                        type="url"
+                                                        value={service.workerUrl}
+                                                        placeholder="http://127.0.0.1:3020/health"
+                                                        onChange={event => updateService(service.id, { workerUrl: event.target.value })}
+                                                    />
+                                                </label>
+                                                <label>
+                                                    Redis URL
+                                                    <input
+                                                        type="text"
+                                                        value={service.redisUrl}
+                                                        placeholder="redis://127.0.0.1:6379"
+                                                        spellCheck={false}
+                                                        onChange={event => updateService(service.id, { redisUrl: event.target.value })}
+                                                    />
+                                                </label>
+                                            </>
+                                        ) : (
+                                            <label>
+                                                Homepage URL
+                                                <input
+                                                    type="url"
+                                                    value={service.homeUrl}
+                                                    placeholder="Optional curl of the public page"
+                                                    onChange={event => updateService(service.id, { homeUrl: event.target.value })}
+                                                />
+                                            </label>
+                                        )}
                                     </li>
                                 ))}
                             </ul>
@@ -277,7 +344,7 @@ export function SettingsPanel({ onClose, onSaved }: { onClose: () => void; onSav
             const id = newAppId(current.services.map(service => service.id));
             return {
                 ...current,
-                services: [...current.services, { id, name: 'New app', kind: 'http', enabled: true, healthUrl: '', readyUrl: '', homeUrl: '' }],
+                services: [...current.services, { id, name: 'New app', type: 'web-app', kind: 'http', enabled: true, healthUrl: '', readyUrl: '', homeUrl: '', workerUrl: '', redisUrl: '' }],
             };
         });
     }

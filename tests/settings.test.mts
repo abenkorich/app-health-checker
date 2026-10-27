@@ -40,8 +40,11 @@ describe('parseSettings', () => {
         assert.equal(parsed.ok, true);
         if (!parsed.ok) return;
         assert.deepEqual(parsed.settings.services.map(service => service.id), ['platform', 'billing']);
+        assert.equal(parsed.settings.services[1]?.type, 'web-app');
         assert.equal(parsed.settings.services[1]?.kind, 'http');
         assert.equal(parsed.settings.services[1]?.homeUrl, '');
+        assert.equal(parsed.settings.services[1]?.workerUrl, '');
+        assert.equal(parsed.settings.services[1]?.redisUrl, '');
     });
 
     it('keeps the seeded homepage when a saved app omits it, and rejects a non-http homepage', () => {
@@ -52,6 +55,9 @@ describe('parseSettings', () => {
         assert.equal(omitted.ok, true);
         if (!omitted.ok) return;
         assert.equal(omitted.settings.services.find(service => service.id === 'storefront')?.homeUrl, 'http://127.0.0.1:3001/');
+        assert.equal(omitted.settings.services.find(service => service.id === 'platform')?.type, 'api');
+        assert.equal(omitted.settings.services.find(service => service.id === 'platform')?.workerUrl, 'http://127.0.0.1:3020/health');
+        assert.equal(omitted.settings.services.find(service => service.id === 'platform')?.redisUrl, 'redis://127.0.0.1:6379');
 
         const badHome = parseSettings({
             ...current,
@@ -60,6 +66,44 @@ describe('parseSettings', () => {
             )),
         }, current);
         assert.equal(badHome.ok, false);
+
+        const api = parseSettings({
+            ...current,
+            services: [
+                ...current.services,
+                { id: 'billing', name: 'Billing', type: 'api', enabled: true, healthUrl: 'https://billing.example/health', readyUrl: '', workerUrl: 'https://billing.example/worker' },
+            ],
+        }, current);
+        assert.equal(api.ok, true);
+        if (!api.ok) return;
+        assert.equal(api.settings.services.find(service => service.id === 'billing')?.kind, 'platform');
+        assert.equal(api.settings.services.find(service => service.id === 'billing')?.workerUrl, 'https://billing.example/worker');
+
+        const badWorker = parseSettings({
+            ...current,
+            services: current.services.map(service => (
+                service.id === 'platform' ? { ...service, workerUrl: 'file:///tmp/worker' } : service
+            )),
+        }, current);
+        assert.equal(badWorker.ok, false);
+
+        const redis = parseSettings({
+            ...current,
+            services: current.services.map(({ redisUrl: _redis, ...service }) => (
+                service.id === 'platform' ? service : { ...service, redisUrl: '' }
+            )),
+        }, current);
+        assert.equal(redis.ok, true);
+        if (!redis.ok) return;
+        assert.equal(redis.settings.services.find(service => service.id === 'platform')?.redisUrl, 'redis://127.0.0.1:6379');
+
+        const badRedis = parseSettings({
+            ...current,
+            services: current.services.map(service => (
+                service.id === 'platform' ? { ...service, redisUrl: 'http://127.0.0.1:6379' } : service
+            )),
+        }, current);
+        assert.equal(badRedis.ok, false);
     });
 
     it('allows an empty recipient list, which leaves mail off', () => {

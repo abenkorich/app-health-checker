@@ -1,14 +1,18 @@
 import { alertRemindMs, readMailConfig, type AlertWhen, type MailConfig } from './alerts.ts';
-import { envUrl, pollIntervalMs, probeTimeoutMs, SERVICE_CATALOG, type Target } from './targets.ts';
+import { parseRedisUrl } from './redis.ts';
+import { envUrl, pollIntervalMs, probeTimeoutMs, SERVICE_CATALOG, type AppType, type Target } from './targets.ts';
 
 export type ServiceSetting = {
     id: string;
     name: string;
+    type: AppType;
     kind: Target['kind'];
     enabled: boolean;
     healthUrl: string;
     readyUrl: string;
     homeUrl: string;
+    workerUrl: string;
+    redisUrl: string;
 };
 
 export type StatusSettings = {
@@ -56,14 +60,23 @@ export function defaultSettings(env: NodeJS.ProcessEnv = process.env): StatusSet
             const home = item.homeEnv && item.homeFallback
                 ? envUrl(env, item.homeEnv, item.homeFallback)
                 : { enabled: false, url: '' };
+            const worker = item.workerEnv && item.workerFallback
+                ? envUrl(env, item.workerEnv, item.workerFallback)
+                : { enabled: false, url: '' };
+            const redis = item.redisEnv && item.redisFallback
+                ? envUrl(env, item.redisEnv, item.redisFallback)
+                : { enabled: false, url: '' };
             return {
                 id: item.id,
                 name: item.name,
+                type: item.type,
                 kind: item.kind,
                 enabled: health.enabled,
                 healthUrl: health.url,
-                readyUrl: ready.url,
+                readyUrl: ready.enabled ? ready.url : '',
                 homeUrl: home.enabled ? home.url : '',
+                workerUrl: worker.enabled ? worker.url : '',
+                redisUrl: redis.enabled ? redis.url : '',
             };
         }),
     };
@@ -133,11 +146,14 @@ export function targetsFrom(settings: StatusSettings): Target[] {
         const target: Target = {
             id: service.id,
             name: service.name,
-            kind: service.kind,
+            type: service.type,
+            kind: service.type === 'api' ? 'platform' : 'http',
             healthUrl: service.healthUrl,
         };
-        if (service.readyUrl.trim()) target.readyUrl = service.readyUrl.trim();
-        if (service.homeUrl.trim()) target.homeUrl = service.homeUrl.trim();
+        if (service.type === 'api' && service.readyUrl.trim()) target.readyUrl = service.readyUrl.trim();
+        if (service.type === 'api' && service.workerUrl.trim()) target.workerUrl = service.workerUrl.trim();
+        if (service.type === 'api' && service.redisUrl.trim()) target.redisUrl = service.redisUrl.trim();
+        if (service.type === 'web-app' && service.homeUrl.trim()) target.homeUrl = service.homeUrl.trim();
         targets.push(target);
     }
     return targets;
@@ -170,20 +186,30 @@ function parseServices(
         const readyUrl = typeof item.readyUrl === 'string' ? item.readyUrl.trim() : '';
         const known = current.services.find(service => service.id === item.id);
         const homeUrl = typeof item.homeUrl === 'string' ? item.homeUrl.trim() : (known?.homeUrl ?? '');
+        const workerUrl = typeof item.workerUrl === 'string' ? item.workerUrl.trim() : (known?.workerUrl ?? '');
+        const redisUrl = typeof item.redisUrl === 'string' ? item.redisUrl.trim() : (known?.redisUrl ?? '');
+        const type: AppType = item.type === 'api' || item.type === 'web-app'
+            ? item.type
+            : (known?.type ?? (readyUrl ? 'api' : 'web-app'));
         if (enabled && !isHttp(healthUrl)) return { ok: false, error: `${name} needs an http or https health URL.` };
         if (readyUrl && !isHttp(readyUrl)) return { ok: false, error: `${name} ready URL must be http or https.` };
         if (homeUrl && !isHttp(homeUrl)) return { ok: false, error: `${name} homepage URL must be http or https.` };
+        if (workerUrl && !isHttp(workerUrl)) return { ok: false, error: `${name} worker URL must be http or https.` };
+        if (redisUrl && !parseRedisUrl(redisUrl)) return { ok: false, error: `${name} Redis URL must start with redis:// or rediss://.` };
         const requested = typeof item.id === 'string' && /^[a-z0-9][a-z0-9-]{0,48}$/.test(item.id) ? item.id : '';
         const id = requested && !used.has(requested) ? requested : uniqueId(name, used);
         used.add(id);
         services.push({
             id,
             name,
-            kind: readyUrl ? 'platform' : 'http',
+            type,
+            kind: type === 'api' ? 'platform' : 'http',
             enabled,
             healthUrl,
             readyUrl,
             homeUrl,
+            workerUrl,
+            redisUrl,
         });
     }
     return { ok: true, services };

@@ -6,7 +6,7 @@ export type AlertMemory = {
 };
 
 export type AlertEmail = {
-    kind: 'down' | 'recovered';
+    kind: 'down' | 'recovered' | 'status';
     subject: string;
     text: string;
     html: string;
@@ -100,6 +100,28 @@ export function planAlerts(input: {
     return { next, emails };
 }
 
+/** A full board snapshot, sent when someone asks for the current status. */
+export function statusSnapshot(report: StatusReport): AlertEmail {
+    const down = report.services.filter(service => service.state === 'down');
+    const degraded = report.services.filter(service => service.state === 'degraded');
+    const parts = [down.length > 0 ? `${down.length} down` : 'none down'];
+    if (degraded.length > 0) parts.push(`${degraded.length} degraded`);
+    const subject = `App Health Checker: ${parts.join(', ')} · overall ${report.state}`;
+    const lines = [
+        `Overall: ${report.state}`,
+        '',
+        ...report.services.map(describeService),
+        '',
+        `Checked ${report.checkedAt}`,
+    ];
+    return {
+        kind: 'status',
+        subject,
+        text: lines.join('\n'),
+        html: renderEmail(down, report, false, 'status'),
+    };
+}
+
 function statusEmail(
     focus: ServiceReport[],
     report: StatusReport,
@@ -154,9 +176,10 @@ const STATE_COLOR: Record<State, { bar: string; ink: string; wash: string }> = {
 };
 
 function renderEmail(focus: ServiceReport[], report: StatusReport, reminder: boolean, kind: AlertEmail['kind']): string {
-    const headline = kind === 'recovered' ? 'Recovered' : reminder ? 'Still down' : 'Needs attention';
+    const headline = kind === 'status' ? 'Current status' : kind === 'recovered' ? 'Recovered' : reminder ? 'Still down' : 'Needs attention';
     const widgets = report.services.map(widget).join('');
     const names = focus.map(service => esc(service.name)).join(', ');
+    const subtitle = names ? `${esc(headline)} · ${names}` : esc(headline);
     return `<!DOCTYPE html>
 <html>
 <body style="margin:0;padding:0;background:#f4f6f8;">
@@ -166,7 +189,7 @@ function renderEmail(focus: ServiceReport[], report: StatusReport, reminder: boo
 <tr><td style="padding:0 4px 16px;">
 <div style="font-size:12px;font-weight:600;letter-spacing:0.08em;color:#5c6b73;">APP HEALTH CHECKER</div>
 <div style="margin-top:6px;font-size:22px;font-weight:650;letter-spacing:-0.02em;">Overall ${esc(report.state)}</div>
-<div style="margin-top:4px;font-size:14px;color:#5c6b73;">${esc(headline)} · ${names}</div>
+<div style="margin-top:4px;font-size:14px;color:#5c6b73;">${subtitle}</div>
 </td></tr>
 ${widgets}
 <tr><td style="padding:8px 4px 0;font-size:12px;color:#5c6b73;">Checked ${esc(report.checkedAt)}</td></tr>

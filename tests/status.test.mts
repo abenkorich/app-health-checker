@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { applyHomepage, overallState, serviceFromHttp, serviceFromPlatform } from '../src/lib/aggregate.ts';
+import { applyHomepage, applyRedis, applyWorker, overallState, serviceFromHttp, serviceFromPlatform } from '../src/lib/aggregate.ts';
 import { loadTargets, pollIntervalMs } from '../src/lib/targets.ts';
 
 describe('overallState', () => {
@@ -131,6 +131,37 @@ describe('homepage curl', () => {
     });
 });
 
+describe('worker url', () => {
+    const up = serviceFromHttp({
+        id: 'billing',
+        name: 'Billing',
+        probe: { ok: true, status: 200, latencyMs: 10, json: { ok: true } },
+    });
+
+    it('marks an API degraded when the worker URL fails', () => {
+        const report = applyWorker(up, { ok: false, status: null, latencyMs: 3000, json: null });
+        assert.equal(report.state, 'degraded');
+        assert.equal(report.detail, 'Worker check failed');
+        assert.equal(report.dependencies.find(item => item.id === 'worker')?.detail, 'No response');
+    });
+});
+
+describe('redis url', () => {
+    const up = serviceFromHttp({
+        id: 'billing',
+        name: 'Billing',
+        probe: { ok: true, status: 200, latencyMs: 10, json: { ok: true } },
+    });
+
+    it('marks an API degraded when the Redis ping fails', () => {
+        const report = applyRedis(up, { ok: false, latencyMs: 12, detail: 'auth failed' });
+        assert.equal(report.state, 'degraded');
+        assert.equal(report.detail, 'Redis check failed');
+        assert.equal(report.dependencies.find(item => item.id === 'redis')?.detail, 'auth failed');
+        assert.equal(JSON.stringify(report).includes('secret'), false);
+    });
+});
+
 describe('loadTargets', () => {
     it('uses the local ports and can turn an app off', () => {
         const targets = loadTargets({ LMS_HEALTH_URL: 'off' });
@@ -139,7 +170,11 @@ describe('loadTargets', () => {
             ['platform', 'storefront', 'pos', 'console'],
         );
         assert.equal(targets[0]?.healthUrl, 'http://127.0.0.1:3000/health');
+        assert.equal(targets[0]?.type, 'api');
         assert.equal(targets[0]?.readyUrl, 'http://127.0.0.1:3000/health/ready');
+        assert.equal(targets[0]?.workerUrl, 'http://127.0.0.1:3020/health');
+        assert.equal(targets[0]?.redisUrl, 'redis://127.0.0.1:6379');
+        assert.equal(targets.find(target => target.id === 'storefront')?.type, 'web-app');
         assert.equal(targets.find(target => target.id === 'storefront')?.homeUrl, 'http://127.0.0.1:3001/');
     });
 

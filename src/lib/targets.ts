@@ -1,15 +1,21 @@
+export type AppType = 'api' | 'web-app';
+
 export type Target = {
     id: string;
     name: string;
+    type: AppType;
     kind: 'platform' | 'http';
     healthUrl: string;
     readyUrl?: string;
     homeUrl?: string;
+    workerUrl?: string;
+    redisUrl?: string;
 };
 
 export const SERVICE_CATALOG: Array<{
     id: string;
     name: string;
+    type: AppType;
     kind: Target['kind'];
     env: string;
     fallback: string;
@@ -17,19 +23,29 @@ export const SERVICE_CATALOG: Array<{
     readyFallback?: string;
     homeEnv?: string;
     homeFallback?: string;
+    workerEnv?: string;
+    workerFallback?: string;
+    redisEnv?: string;
+    redisFallback?: string;
 }> = [
     {
         id: 'platform',
         name: 'Platform API',
+        type: 'api',
         kind: 'platform',
         env: 'PLATFORM_HEALTH_URL',
         fallback: 'http://127.0.0.1:3000/health',
         readyEnv: 'PLATFORM_READY_URL',
         readyFallback: 'http://127.0.0.1:3000/health/ready',
+        workerEnv: 'PLATFORM_WORKER_URL',
+        workerFallback: 'http://127.0.0.1:3020/health',
+        redisEnv: 'PLATFORM_REDIS_URL',
+        redisFallback: 'redis://127.0.0.1:6379',
     },
     {
         id: 'storefront',
         name: 'Storefront',
+        type: 'web-app',
         kind: 'http',
         env: 'STOREFRONT_HEALTH_URL',
         fallback: 'http://127.0.0.1:3001/api/health',
@@ -39,6 +55,7 @@ export const SERVICE_CATALOG: Array<{
     {
         id: 'pos',
         name: 'POS',
+        type: 'web-app',
         kind: 'http',
         env: 'POS_HEALTH_URL',
         fallback: 'http://127.0.0.1:3002/api/health',
@@ -48,6 +65,7 @@ export const SERVICE_CATALOG: Array<{
     {
         id: 'console',
         name: 'Console',
+        type: 'web-app',
         kind: 'http',
         env: 'CONSOLE_HEALTH_URL',
         fallback: 'http://127.0.0.1:3003/api/health',
@@ -57,6 +75,7 @@ export const SERVICE_CATALOG: Array<{
     {
         id: 'lms',
         name: 'Academy',
+        type: 'web-app',
         kind: 'http',
         env: 'LMS_HEALTH_URL',
         fallback: 'http://127.0.0.1:3004/api/health',
@@ -71,7 +90,7 @@ export function loadTargets(env: NodeJS.ProcessEnv = process.env): Target[] {
     for (const item of SERVICE_CATALOG) {
         const healthUrl = configuredUrl(env, item.env, item.fallback);
         if (!healthUrl) continue;
-        const target: Target = { id: item.id, name: item.name, kind: item.kind, healthUrl };
+        const target: Target = { id: item.id, name: item.name, type: item.type, kind: item.kind, healthUrl };
         if (item.readyEnv && item.readyFallback) {
             const readyUrl = configuredUrl(env, item.readyEnv, item.readyFallback);
             if (readyUrl) target.readyUrl = readyUrl;
@@ -79,6 +98,14 @@ export function loadTargets(env: NodeJS.ProcessEnv = process.env): Target[] {
         if (item.homeEnv && item.homeFallback) {
             const homeUrl = configuredUrl(env, item.homeEnv, item.homeFallback);
             if (homeUrl) target.homeUrl = homeUrl;
+        }
+        if (item.workerEnv && item.workerFallback) {
+            const workerUrl = configuredUrl(env, item.workerEnv, item.workerFallback);
+            if (workerUrl) target.workerUrl = workerUrl;
+        }
+        if (item.redisEnv && item.redisFallback) {
+            const redisUrl = configuredUrl(env, item.redisEnv, item.redisFallback);
+            if (redisUrl) target.redisUrl = redisUrl;
         }
         targets.push(target);
     }
